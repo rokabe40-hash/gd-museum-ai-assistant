@@ -1,0 +1,23 @@
+# 广东省博物馆讲解 AI 后端运行时依赖（锁定自本机已验证环境）
+# 生成日期: 2026-08-16
+# 安装: pip install -r requirements.txt
+# 注意: RAG 子项目单独以可编辑模式安装: pip install -e RAG
+#       （RAG 自带 data/ 向量库与 RAG/.env 密钥，不并入本文件）
+
+fastapi==0.139.2
+uvicorn==0.51.0
+gunicorn==23.0.0
+pydantic==2.12.4
+pydantic-settings==2.14.2
+python-dotenv==1.1.0
+
+langgraph==1.2.9
+langchain-core==1.5.0
+langchain-community==0.4.2
+langchain-text-splitters==1.1.2
+langchain-openai==1.3.5
+
+neo4j==6.2.0
+rank-bm25==0.2.2
+qdrant-client==1.19.0
+httpx==0.28.1

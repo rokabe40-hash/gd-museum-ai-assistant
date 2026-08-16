@@ -1,0 +1,102 @@
+[
+{
+    "facility": "男卫生间",
+    "location": ["一楼西门通道", "二楼大堂东南角咖啡厅旁边", "三楼西南角", "三夹层西南角", "四楼西南角"],
+    "information": null
+},
+{
+    "facility": "女卫生间",
+    "location": ["一楼西门通道", "二楼大堂东南角咖啡厅旁边", "三楼南侧", "三夹层南侧", "四楼南侧"],
+    "information": null
+},
+{
+    "facility": "无障碍卫生间",
+    "location": ["三楼南侧", "三夹层南侧", "四楼南侧"],
+    "information": null
+},
+{
+    "facility": "餐饮服务",
+    "location": ["二楼大堂东南角设咖啡厅", "二夹层设餐饮区"],
+    "information": "提供咖啡、饮料、简餐；二夹层设饮水机"
+},
+{
+    "facility": "寄存服务",
+    "location": null,
+    "information": "寄存柜数量有限，现金、首饰、手机等贵重物品及小件物品请随身携带"
+},
+{
+    "facility": "购物服务",
+    "location": ["纪念品商店位于二楼大堂东北角","三楼展厅过道及三夹层均设有销售点"],
+    "information": null
+},
+{
+    "facility": "导览手册",
+    "location": ["二楼大堂及各展厅入口资料架"],
+    "information": "免费取阅"
+},
+{
+    "facility": "广播服务",
+    "location": ["二楼大堂服务中心"],
+    "information": "如寻人寻物，请至二楼大堂服务中心咨询"
+},
+{
+    "facility": "无线网络",
+    "location": ["博物馆公共区域"],
+    "information": "免费WiFi覆盖"
+},
+{
+    "facility": "便民雨伞",
+    "location": ["二楼大堂服务中心办理"],
+    "information": "免费租借，需50元现金押金"
+},
+{
+    "facility": "便民披肩",
+    "location": ["二楼大堂服务中心办理"],
+    "information": "免费租借，押相关证件（如身份证、港澳通行证、居民居住证、护照、军人证等）"
+},
+{
+    "facility": "便民轮椅",
+    "location": ["二楼大堂服务中心办理"],
+    "information": "免费租借，押相关证件（如身份证、港澳通行证、居民居住证、护照、军人证等）"
+},
+{
+    "facility": "婴儿车",
+    "location": ["二楼大堂服务中心办理"],
+    "information": "免费租借，押相关证件（如身份证、港澳通行证、居民居住证、护照、军人证等）"
+},
+{
+    "facility": "便民拐杖",
+    "location": ["二楼大堂服务中心办理"],
+    "information": "免费租借，押相关证件（如身份证、港澳通行证、居民居住证、护照、军人证等）"
+},
+{
+    "facility": "针线包、老花镜",
+    "location": ["二楼大堂服务中心办理"],
+    "information": "免费租借"
+},
+{
+    "facility": "充电宝",
+    "location": ["二楼大堂服务中心", "三夹层"],
+    "information": "共享充电宝"
+},
+{
+    "facility": "医疗救助",
+    "location": ["二楼大堂东北角"],
+    "information": "设有健康观察室"
+},
+{
+    "facility": "母婴室",
+    "location": ["二楼大堂东北角医务室旁"],
+    "information": "配有3间哺乳室、儿童安全椅、冰箱、饮水机等；更换尿布请移步无障碍洗手间婴儿护理台"
+},
+{
+    "facility": "无障碍洗手间",
+    "location": ["各楼层南面女洗手间旁"],
+    "information": null
+},
+{
+    "facility": "携带导盲犬",
+    "location": null,
+    "information": "如有视障观众需携带导盲犬入馆，请咨询020-38046886"
+}
+]

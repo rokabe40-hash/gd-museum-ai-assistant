@@ -1,0 +1,81 @@
+# ============================================================
+# 广东省博物馆讲解 AI 后端 生产编排（单机 Docker）
+#
+# 用法：
+#   cp .env.example .env          # 填 DEEPSEEK_KEY / NEO4J_PASSWORD 等
+#   docker compose up -d --build
+#
+# 数据初始化（仅首次，见 README「部署」章节）：
+#   docker compose run --rm app python Neo4j/import_to_neo4j.py
+#   docker compose run --rm app sh -c "museum-rag normalize && museum-rag chunk && museum-rag index"
+# ============================================================
+
+services:
+  neo4j:
+    image: neo4j:5.26
+    container_name: museum-neo4j
+    restart: unless-stopped
+    environment:
+      # 密码必填；.env 未设置 NEO4J_PASSWORD 时 compose 直接报错，杜绝默认口令
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:?请先在 .env 中设置 NEO4J_PASSWORD}"
+      NEO4J_dbms_memory_pagecache_size: 256m
+      NEO4J_dbms_memory_heap_max__size: 1G
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    networks:
+      - museum-net
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.3
+    container_name: museum-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+    networks:
+      - museum-net
+
+  app:
+    build: .
+    image: museum-agent-backend:latest
+    container_name: museum-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # 覆盖 .env 中的本地默认值，指向容器网络内的数据服务
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      QDRANT_MODE: server
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      # 后端启动时对 Neo4j fail-fast，必须等它就绪；Qdrant 懒连接，启动即算就绪
+      neo4j:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    networks:
+      - museum-net
+
+networks:
+  museum-net:
+    driver: bridge
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  qdrant_data:

@@ -1,0 +1,37 @@
+# ── 密钥 — 绝不入库 ────────────────────────────────
+.env
+RAG/.env
+
+# ── Python ─────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# ── 测试 / 缓存 ───────────────────────────────────
+.pytest_cache/
+.hypothesis/
+
+# ── IDE / 编辑器 / 本地配置 ────────────────────────
+.vscode/
+.idea/
+.claude/
+*.swp
+
+# ── 大数据 / 离线产物（不入库，云端重建）───────────
+RAG/data/
+RAG/dist/
+*.whl
+Neo4j/具身智能实验室.dump
+Neo4j/_test_out.txt
+Neo4j/广东省博物馆数据/藏品总目.json
+
+# ── 一次性数据构建产物（根目录）────────────────────
+/藏品总目.json
+/有详细介绍的藏品.json
+/metadata_mapping.json
+/metadata_dead_letter.json
+/duplicate_names.txt
