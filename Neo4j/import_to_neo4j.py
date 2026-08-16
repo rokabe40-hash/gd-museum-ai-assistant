@@ -12,7 +12,9 @@ from neo4j import GraphDatabase
 load_dotenv()
 
 # ── 配置（密码必填，无默认值）─────────────────────────
-DATA_DIR = "广东省博物馆数据"
+# 数据目录按脚本所在位置解析：本地（Neo4j/ 下）与容器（/app/Neo4j/）都能直接跑，
+# 无需先 cd 到特定目录
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "广东省博物馆数据")
 DB_URI = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
 DB_USER = os.environ.get("NEO4J_USER", "neo4j")
 DB_PASS = os.environ.get("NEO4J_PASSWORD")

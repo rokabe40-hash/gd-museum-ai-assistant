@@ -32,6 +32,9 @@ START → intent_parser_node
 ```
 ├── main.py                 # FastAPI + LangGraph 后端（唯一入口）
 ├── faq_builder.py          # FAQ JSON → Markdown（BM25 索引源）
+├── Dockerfile              # 生产镜像（Gunicorn + Uvicorn worker，非 root 运行）
+├── docker-compose.yml      # 一键编排 app + neo4j + qdrant
+├── DEPLOY.md               # 云端部署手册
 ├── requirements.txt        # 根项目运行时依赖
 ├── pytest.ini              # 测试配置（默认跳过集成）
 ├── .env.example            # 环境变量模板
@@ -128,7 +131,7 @@ uvicorn main:app --reload
 ## 测试
 
 ```bash
-pytest                      # 59 个快速单测（节点/分词/BM25 召回/楼层解析，不打外网）
+pytest                      # 63 个快速单测（节点/分词/BM25 召回/楼层解析，不打外网）
 pytest -m integration       # 5 个端到端用例（需全栈在线）
 ```
 
@@ -136,7 +139,25 @@ pytest -m integration       # 5 个端到端用例（需全栈在线）
 
 ## 部署
 
-代码侧已就绪，剩余为环境侧事项：
+一键 Docker 编排（`app` + `neo4j` + `qdrant`）：
+
+```bash
+cp .env.example .env        # 填 DEEPSEEK_KEY / NEO4J_PASSWORD / DASHSCOPE_* / API_ACCESS_KEYS
+docker compose up -d --build
+```
+
+首次数据初始化（仅一次）：
+```bash
+docker compose run --rm --user 0 app python Neo4j/import_to_neo4j.py
+docker compose run --rm --user 0 app sh -c "museum-rag normalize && museum-rag chunk && museum-rag index"
+```
+
+- `NEO4J_PASSWORD` 必填（compose 未设置会直接报错）；`.env` 已由 `.dockerignore` 排除，密钥不进镜像。
+- 镜像以非 root（uid 1000）运行；embedding 缓存挂载 `./RAG/data/cache:/cache`，宿主目录需 `chown 1000:1000`。
+
+详细步骤（阿里云轻量服务器、防火墙、数据迁移、验证、安全收敛）见 [`DEPLOY.md`](DEPLOY.md)。
+
+### 部署环境变量
 
 - **Neo4j / Qdrant 托管**：`NEO4J_URI/USER/PASSWORD` 与 `QDRANT_MODE/URL` 环境变量已支持远程；迁移数据与向量索引。
 - **密钥注入**：`DEEPSEEK_KEY`、`DASHSCOPE_*` 走平台环境变量，`.env` 与密钥绝不进镜像/仓库。

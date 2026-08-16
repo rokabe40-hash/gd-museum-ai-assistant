@@ -60,6 +60,10 @@ services:
       NEO4J_USER: neo4j
       QDRANT_MODE: server
       QDRANT_URL: http://qdrant:6333
+      # 复用本机 embedding 缓存：把 RAG/data/cache/embeddings.sqlite3 放到宿主机同路径即命中，云端建索引免重调嵌入 API
+      CACHE_PATH: /cache/embeddings.sqlite3
+    volumes:
+      - ./RAG/data/cache:/cache
     depends_on:
       # 后端启动时对 Neo4j fail-fast，必须等它就绪；Qdrant 懒连接，启动即算就绪
       neo4j:

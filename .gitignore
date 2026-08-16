@@ -25,6 +25,7 @@ dist/
 RAG/data/
 RAG/dist/
 *.whl
+/museum_deploy.tar.gz        # 部署包，用 DEPLOY.md 的 tar 命令重新生成
 Neo4j/具身智能实验室.dump
 Neo4j/_test_out.txt
 Neo4j/广东省博物馆数据/藏品总目.json

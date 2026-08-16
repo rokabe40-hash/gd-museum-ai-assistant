@@ -8,6 +8,10 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    # 国内 pip 镜像加速（构建时装依赖更快）
+    PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple \
+    # 直接指向 RAG 源码：pip editable 安装在容器里不可靠，PYTHONPATH 保证 import 与 PROJECT_ROOT 解析正确
+    PYTHONPATH=/app/RAG/src \
     # 查询向量缓存写入 /tmp（/app 归属 root 只读，非 root 运行必需）
     CACHE_PATH=/tmp/embeddings.sqlite3
 
@@ -18,7 +22,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # ── RAG 子项目（可编辑安装，勿装 whl 否则读不到配置/数据）─
-COPY RAG/pyproject.toml RAG/README.md RAG/src ./RAG/
+# 注意：src 必须整体拷到 ./RAG/src（保留 src 层），否则 pyproject 声明的 src/museum_rag 找不到
+COPY RAG/pyproject.toml RAG/README.md ./RAG/
+COPY RAG/src ./RAG/src
 COPY RAG/*.json ./RAG/
 RUN pip install --no-cache-dir -e ./RAG
 
