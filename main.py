@@ -265,6 +265,9 @@ llm = ChatOpenAI(
     api_key=os.environ["DEEPSEEK_KEY"],  # type: ignore
     base_url="https://api.deepseek.com/v1",
     temperature=0,
+    # 上游瞬时抖动（超时/5xx/限流）自动重试，避免偶发 500
+    max_retries=3,
+    request_timeout=60,
 )
 
 
@@ -297,6 +300,7 @@ def intent_parser_node(state: AgentState) -> dict:
             "1. \"chitchat\" — 纯闲聊、打招呼、无意义输入（如\"你好\"、\"哈哈\"、乱码）。\n"
             "2. \"facility\" — 馆务与便民服务问题（如\"厕所在哪\"、\"怎么预约\"、\"几点开门\"、"
             "\"有没有停车场\"、\"怎么坐地铁\"）。此时必须提取 normalized_keyword。\n"
+            "   - 一句话含多个并列馆务问题（如\"几点开放？洗手间在哪？\"）：normalized_keyword 返回 JSON 数组，如 [\"开放时间\", \"洗手间\"]\n"
             "3. \"museum_query\" — 针对藏品、展览、文物、展厅的问题。此时必须提取 entity 和 entity_type：\n"
             "   - artifact：具体文物/藏品（如\"端砚\"、\"金漆木雕\"、\"端石山崖砚\"）\n"
             "   - exhibition：展览（如\"土火之艺\"、\"漆木精华展\"、泛称\"展览/常设展览/特展\"）\n"
@@ -326,6 +330,7 @@ def intent_parser_node(state: AgentState) -> dict:
             "{\"intent\": \"facility\", \"normalized_keyword\": \"洗手间\"}\n"
             "{\"intent\": \"facility\", \"normalized_keyword\": \"停车\"}\n"
             "{\"intent\": \"facility\", \"normalized_keyword\": \"预约参观\"}\n"
+            "{\"intent\": \"facility\", \"normalized_keyword\": [\"开放时间\", \"洗手间\"]}\n"
             "{\"intent\": \"museum_query\", \"entity\": \"端砚\", \"entity_type\": \"artifact\"}\n"
             "{\"intent\": \"museum_query\", \"entity\": \"土火之艺\", \"entity_type\": \"exhibition\"}\n"
             "{\"intent\": \"museum_query\", \"entity\": \"广东历史文化展厅\", \"entity_type\": \"hall\"}"
@@ -355,7 +360,12 @@ def intent_parser_node(state: AgentState) -> dict:
         if entity_type not in ("artifact", "exhibition", "hall"):
             entity_type = "artifact"
     elif intent == "facility":
-        normalized_keyword = parsed.get("normalized_keyword", "")
+        raw = parsed.get("normalized_keyword", "")
+        # 复合问句（多个并列馆务问题）可能返回关键词数组；统一以 | 拼接，仍存字符串字段
+        if isinstance(raw, list):
+            normalized_keyword = "|".join(str(k).strip() for k in raw if str(k).strip())
+        else:
+            normalized_keyword = str(raw)
 
     # 楼层+内容词的问题强制走图谱楼层查询（如"三楼有什么展厅"），
     # 避免被 LLM 误判为 facility/"楼层导览"（只会按 FAQ 答楼层布局，答非所问）
@@ -442,10 +452,12 @@ def facility_node(state: AgentState) -> dict:
     print(f"\n[路由拦截] facility_node | 原始查询='{user_query}' | 标准化关键词='{normalized_keyword}'")
 
     # 使用 BM25 检索器获取相关文档；洗手间类按同义词扩展检索（数据用"卫生间"）
+    # 复合问句被解析为多个关键词（以 | 分隔），逐个检索后合并去重
     search_query = normalized_keyword if normalized_keyword else user_query
-    search_terms = [search_query]
+    keywords = [k for k in search_query.split("|") if k]
+    search_terms = keywords or [user_query]
     for base, alts in _FACILITY_SYNONYMS.items():
-        if base in search_query:
+        if any(base in k for k in search_terms):
             search_terms.extend(alts)
     retrieved_docs = _facility_search(search_terms)
 
@@ -927,7 +939,18 @@ async def chat(request: ChatRequest, _: str | None = Security(api_key_header)) -
         "is_graph_sufficient": False,
     }
 
-    final_state = await app_graph.ainvoke(initial_state)
+    try:
+        final_state = await app_graph.ainvoke(initial_state)
+    except Exception as exc:
+        # LLM/检索上游抖动等不可控异常：降级为友好提示，避免裸 500 毁掉体验
+        print(f"[chat] graph invoke failed: {type(exc).__name__}", flush=True)
+        return ChatResponse(
+            query=request.query,
+            status="error",
+            answer="抱歉，回答服务暂时繁忙，请稍后再试。",
+            reasoning_steps=[],
+            citations=[],
+        )
 
     # 提取最终回答
     ai_messages = [m for m in final_state["messages"] if isinstance(m, AIMessage)]

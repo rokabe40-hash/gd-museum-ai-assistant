@@ -4,10 +4,57 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
+from fastapi.testclient import TestClient
 from langchain_core.messages import HumanMessage
 
 import main as agent
 from conftest import FakeGraph, FakeRetriever
+
+
+# ── /chat 异常降级 ────────────────────────────────────
+
+def test_chat_returns_graceful_error_when_graph_fails(monkeypatch) -> None:
+    """图执行抛异常时，/chat 降级返回 status=error，而不是裸 500。"""
+    class _BoomGraph:
+        async def ainvoke(self, state):
+            raise RuntimeError("upstream boom")
+
+    monkeypatch.setattr(agent, "app_graph", _BoomGraph())
+    # 不进入 lifespan（避免连真实 Neo4j/Qdrant），仅测端点异常路径
+    client = TestClient(agent.app)
+    resp = client.post("/chat", json={"query": "端砚是什么年代的？"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "error"
+    assert "稍后再试" in data["answer"]
+
+
+# ── 复合馆务问题 ──────────────────────────────────────
+
+def test_intent_parser_compound_keywords_array(stub_llm) -> None:
+    """复合馆务问句：LLM 返回关键词数组 → 以 | 拼接存储。"""
+    stub_llm('{"intent": "facility", "normalized_keyword": ["开放时间", "洗手间"]}')
+    state = {"messages": [HumanMessage(content="博物馆几点开放？洗手间在哪？")], "reasoning_log": []}
+    out = agent.intent_parser_node(state)
+    assert out["current_intent"] == "facility"
+    assert out["normalized_keyword"] == "开放时间|洗手间"
+
+
+def test_facility_node_searches_all_compound_keywords(stub_llm) -> None:
+    """复合关键词逐个检索：开放时间与洗手间章节都应进入 citations。"""
+    stub_llm("好的，为您解答。")
+    state = {
+        "messages": [HumanMessage(content="博物馆几点开放？洗手间在哪？")],
+        "current_intent": "facility",
+        "normalized_keyword": "开放时间|洗手间",
+        "reasoning_log": [],
+        "citations": [],
+        "facility_result": None,
+    }
+    out = agent.facility_node(state)
+    contents = " ".join(c.get("content", "") for c in out["citations"])
+    assert "开放时间" in contents
+    assert ("洗手间" in contents) or ("卫生间" in contents)
 
 
 # ── 路由 ──────────────────────────────────────────────
