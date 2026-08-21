@@ -1,19 +1,28 @@
-# 广东省博物馆讲解 AI 后端
+# 广东省博物馆讲解 AI 助手「粤博智游」
 
-面向游客的讲解/馆务问答服务。回答由两部分拼接：**图谱客观事实**（朝代、材质、尺寸，来自 Neo4j）+ **向量背景故事**（来自 RAG 检索），最后由 LLM 统一组装成通俗回答。
+面向游客的智能讲解与馆务问答系统：游客用自然语言提问，系统结合**知识图谱客观事实**与**向量检索背景故事**，由大语言模型生成通俗、生动、带引用溯源的回答。已部署云端，在线可体验。
 
-## 功能
+## 在线体验 Demo
 
-- **混合检索**：图查询（Neo4j）提供结构化事实，向量检索（Qdrant + DashScope）提供背景故事，LLM 组装。
-- **意图分流**：闲聊（chitchat）、馆务（facility）、内容问答（museum_query）三类意图自动路由。
-- **馆务问答**：BM25 中文检索（2-gram 分词）命中 FAQ 章节，严格基于资料回答、不捏造。
-- **楼层导览**：`三楼有什么展厅` 等按楼层列出展厅（`list_halls(floor=N)`）。
-- **完整溯源**：回答附带 `reasoning_steps`（思考链）与 `citations`（引用来源）。
-- **单元/集成测试**：`pytest` 快速单测 + `pytest -m integration` 全栈回归。
+| 入口 | 地址 | 说明 |
+|---|---|---|
+| 游客端（Streamlit 前端） | http://REDACTED:8501 | 对话式界面，推荐问题、流式打字效果 |
+| API 调试（Swagger） | http://REDACTED:8000/docs | 交互式调试 `POST /chat` |
 
-## 架构
+> Demo 部署于阿里云轻量服务器（Docker Compose：app + Neo4j + Qdrant + Streamlit）。健康探活：`GET http://REDACTED:8000/health` → `{"status":"ok"}`。
 
-LangGraph 状态机，6 个节点：
+## 核心功能
+
+- **混合检索问答**：图查询（Neo4j）提供朝代 / 材质 / 尺寸等客观事实，向量检索（Qdrant + DashScope）提供背景故事，LLM 统一组装成游客可读的回答。
+- **意图分流**：自动识别 闲聊（chitchat）/ 馆务（facility）/ 内容问答（museum_query）三类意图并路由到对应处理节点。
+- **馆务问答**：BM25 中文 2-gram 检索命中 FAQ（洗手间、开放时间、导览等），严格基于资料回答、不捏造。
+- **引用溯源**：回答附带 `citations`（graph / vector / facility），游客可查看"这句话来自哪件藏品 / 哪份馆务资料"。
+- **楼层导览**：`三楼有什么展厅` 等按楼层列出展厅。
+- **多轮聊天前端**：Streamlit 界面，欢迎卡、推荐问题、流式回答、清空对话。
+
+## 技术架构
+
+LangGraph 状态机（6 个节点）：
 
 ```
 START → intent_parser_node
@@ -22,84 +31,66 @@ START → intent_parser_node
            └─ museum_query → graph_retrieval_node → vector_retrieval_node → generate_answer_node → END
 ```
 
-- `graph_retrieval_node`：按 `entity_type`（artifact/exhibition/hall/floor）从 Neo4j 取客观事实。
+**技术栈**：FastAPI · LangGraph · Neo4j 知识图谱 · Qdrant 向量库 · DashScope Embedding · DeepSeek LLM · Streamlit · Docker Compose
+
+- `intent_parser_node`：DeepSeek 识别意图与实体（artifact / exhibition / hall / floor）。
+- `graph_retrieval_node`：从 Neo4j 取结构化客观事实；兜底命中要求名字含关键字，防止简介蹭中（如"端砚"误命中"端石琴石砚"）。
 - `vector_retrieval_node`：RAG 混合检索取背景故事。
-- `generate_answer_node`：LLM 综合"图谱事实 + 向量故事"生成回答。
-- `reasoning_log` 用 LangGraph reducer 累加，API 返回完整步骤链。
+- `generate_answer_node`：LLM 综合"图谱事实 + 向量故事"生成回答；推荐类问题引导介绍馆藏经典；明确禁止以"去服务台咨询"敷衍收尾。
+
+回答质量经过多轮打磨：防幻觉（严格基于资料）、防甩锅（位置信息直接给出）、防冷门（推荐锚定镇馆藏品）、防重影（前端渲染修复）。
 
 ## 目录结构
 
 ```
 ├── main.py                 # FastAPI + LangGraph 后端（唯一入口）
+├── frontend/               # Streamlit 前端「粤博智游」
+│   ├── app.py              # 页面入口
+│   └── components/         # 聊天状态 / API 客户端 / UI 组件
 ├── faq_builder.py          # FAQ JSON → Markdown（BM25 索引源）
-├── Dockerfile              # 生产镜像（Gunicorn + Uvicorn worker，非 root 运行）
-├── docker-compose.yml      # 一键编排 app + neo4j + qdrant
+├── Dockerfile              # 后端生产镜像（Gunicorn + Uvicorn worker，非 root）
+├── docker-compose.yml      # 一键编排 app + neo4j + qdrant + frontend
 ├── DEPLOY.md               # 云端部署手册
 ├── requirements.txt        # 根项目运行时依赖
-├── pytest.ini              # 测试配置（默认跳过集成）
-├── .env.example            # 环境变量模板
 ├── tests/                  # 单测（节点/分词/BM25/楼层）+ 集成
-├── Neo4j/
-│   ├── museum_graph.py     # MuseumGraph 查询接口
-│   ├── import_to_neo4j.py  # 数据导入脚本
-│   ├── 广东省博物馆数据/     # 图谱原始数据
-│   └── NEO4J_README.md     # 图库详细文档
-└── RAG/                    # RAG 子项目（uv 管理，可编辑安装）
-    ├── src/museum_rag/     # 检索/嵌入/存储
-    ├── data/               # 向量库、缓存、评测集
-    └── README.md           # RAG 详细文档
+├── Neo4j/                  # 图谱查询接口与原始数据
+└── RAG/                    # 检索/嵌入/向量存储子项目
 ```
 
-## 快速开始
+## 快速开始（本地运行）
 
 ### 环境要求
 
-- Python 3.12+
-- Neo4j（本地 Neo4j Desktop 或远程实例，需已导入数据）
-- Qdrant 向量库（本地文件库默认，或托管服务）
-- DashScope 嵌入服务 + DeepSeek LLM 的密钥
+Python 3.12+、Neo4j（已导入数据）、Qdrant、DashScope + DeepSeek 密钥。
 
-### 安装依赖
+### 安装与配置
 
 ```bash
 pip install -r requirements.txt
-pip install -e RAG          # RAG 子项目（勿装 whl，会读不到配置）
+pip install -e RAG                    # RAG 子项目（勿装 whl，会读不到配置）
+
+cp .env.example .env                  # 填 DEEPSEEK_KEY、NEO4J_*、CORS_ORIGINS、API_ACCESS_KEYS
+cp RAG/.env.example RAG/.env          # 填 DASHSCOPE_API_KEY
+export API_KEY=你的密钥               # 前端本地运行需与后端 API_ACCESS_KEYS 一致
 ```
 
-### 配置环境变量
+### 首次数据导入
 
 ```bash
-cp .env.example .env        # 填入 DEEPSEEK_KEY、NEO4J_*、CORS_ORIGINS
-cp RAG/.env.example RAG/.env  # 填入 DASHSCOPE_API_KEY 等（若不存在）
-```
-
-所有配置均可通过环境变量注入，本地 `.env` 不覆盖已存在的进程环境变量，方便云端部署。
-
-### 数据导入（仅首次）
-
-**Neo4j 图谱**（需先在 Neo4j 建库、记下密码）：
-
-```bash
-cd Neo4j && python import_to_neo4j.py
-```
-
-**RAG 向量库**（数据已交付时可跳过）：
-
-```bash
-cd RAG && museum-rag normalize && museum-rag chunk && museum-rag index
+cd Neo4j && python import_to_neo4j.py                     # 构建图谱
+cd RAG && museum-rag normalize && museum-rag chunk && museum-rag index   # 构建向量库
 ```
 
 ### 启动
 
 ```bash
-uvicorn main:app --reload
+uvicorn main:app --reload             # 后端 http://127.0.0.1:8000/docs
+streamlit run frontend/app.py         # 前端 http://127.0.0.1:8501
 ```
-
-启动时 lifespan 会连接 Neo4j 并 `verify()`（连不上则 fail-fast 拒绝启动）。访问 `http://127.0.0.1:8000/docs` 查看 Swagger。
 
 ## API
 
-`POST /chat`，请求：
+`POST /chat`（若配置了 `API_ACCESS_KEYS`，请求需带 `X-API-Key` 请求头）：
 
 ```json
 { "query": "端砚是什么年代的？" }
@@ -111,38 +102,34 @@ uvicorn main:app --reload
 {
   "query": "端砚是什么年代的？",
   "status": "success",
-  "answer": "端砚是宋代的……",
+  "answer": "端砚从唐代起即为贡品……",
   "reasoning_steps": [
-    { "step": 1, "tool_used": "intent_parser", "action_input": "端砚是什么年代的？", "observation": "识别意图=museum_query, 实体=端砚, 类型=artifact" },
-    { "step": 2, "tool_used": "graph_retrieval (Neo4j)", "action_input": "端砚", "observation": "图谱命中[artifact]: 端砚" }
+    { "step": 1, "tool_used": "intent_parser", "action_input": "端砚是什么年代的？", "observation": "识别意图=museum_query, 实体=端砚, 类型=artifact" }
   ],
   "citations": [
-    { "source_type": "graph", "content": "端砚 | 宋代 | 石 | 长18.5cm | 文房四宝之首……" },
-    { "source_type": "vector", "content": "端砚背景故事……" }
+    { "source_type": "graph", "content": "端石琴石砚 | 清同治至光绪 | 石 | ……" },
+    { "source_type": "vector", "content": "宋端石太史砚 | ……" }
   ]
 }
 ```
 
-- `reasoning_steps`：完整思考链（意图 → 各检索节点 → 生成）。
-- `citations`：`source_type` 为 `graph` / `vector` / `facility`。
-
-> 鉴权：若已配置 `API_ACCESS_KEYS`，请求需带 `X-API-Key` 请求头，否则返回 401。
+- `answer`：最终回答（前端主展示字段）。
+- `citations`：引用溯源，`source_type` 为 `graph`（图谱事实）/ `vector`（背景故事）/ `facility`（馆务）。
+- `reasoning_steps`：完整思考链（意图 → 各检索节点 → 生成），一般调试用。
 
 ## 测试
 
 ```bash
-pytest                      # 63 个快速单测（节点/分词/BM25 召回/楼层解析，不打外网）
-pytest -m integration       # 5 个端到端用例（需全栈在线）
+pytest                      # 68 个快速单测（节点/分词/BM25/楼层，不打外网）
+pytest -m integration       # 端到端用例（需全栈在线）
 ```
-
-> 注意：Qdrant 本地库有独占文件锁，跑集成测试前先停掉开发服务器（否则报 `Storage folder already accessed`）。
 
 ## 部署
 
-一键 Docker 编排（`app` + `neo4j` + `qdrant`）：
+一键 Docker 编排（`app` + `neo4j` + `qdrant` + `frontend`）：
 
 ```bash
-cp .env.example .env        # 填 DEEPSEEK_KEY / NEO4J_PASSWORD / DASHSCOPE_* / API_ACCESS_KEYS
+cp .env.example .env        # 填 DEEPSEEK_KEY / NEO4J_PASSWORD / DASHSCOPE_* / API_ACCESS_KEYS / API_KEY
 docker compose up -d --build
 ```
 
@@ -152,21 +139,14 @@ docker compose run --rm --user 0 app python Neo4j/import_to_neo4j.py
 docker compose run --rm --user 0 app sh -c "museum-rag normalize && museum-rag chunk && museum-rag index"
 ```
 
-- `NEO4J_PASSWORD` 必填（compose 未设置会直接报错）；`.env` 已由 `.dockerignore` 排除，密钥不进镜像。
-- 镜像以非 root（uid 1000）运行；embedding 缓存挂载 `./RAG/data/cache:/cache`，宿主目录需 `chown 1000:1000`。
+详细步骤（阿里云、防火墙、数据迁移、安全收敛）见 [`DEPLOY.md`](DEPLOY.md)。
 
-详细步骤（阿里云轻量服务器、防火墙、数据迁移、验证、安全收敛）见 [`DEPLOY.md`](DEPLOY.md)。
+## 团队
 
-### 部署环境变量
-
-- **Neo4j / Qdrant 托管**：`NEO4J_URI/USER/PASSWORD` 与 `QDRANT_MODE/URL` 环境变量已支持远程；迁移数据与向量索引。
-- **密钥注入**：`DEEPSEEK_KEY`、`DASHSCOPE_*` 走平台环境变量，`.env` 与密钥绝不进镜像/仓库。
-- **访问鉴权**：设置 `API_ACCESS_KEYS`（逗号分隔）后 `/chat` 要求请求头 `X-API-Key` 匹配，防第三方消耗付费 token；留空则仅限本地开发。
-- **限流与探活**：`/health` 供 Docker HEALTHCHECK / 负载均衡探测；`RATE_LIMIT_MAX`、`RATE_LIMIT_WINDOW_SECONDS` 控制 `/chat` 按客户端 IP 滑动窗口限流；`TRUST_PROXY_XFF=1` 仅在后端置于可信反代之后开启（否则该头可被伪造绕过限流）。
-- **CORS**：`CORS_ORIGINS` 逗号分隔配置前端域名，`*` 时自动关闭 credentials。
-- **Windows 兼容**：`sys.stdout.reconfigure` 仅在 win32 生效，Linux 无影响。
+谢恩泽 · 吴弘翔 · 王智勇 · 雷仕鹏 · 陈宣乐
 
 ## 参考文档
 
 - [Neo4j 图数据库文档](Neo4j/NEO4J_README.md) — 图模型、MuseumGraph 接口、数据导入
 - [RAG 检索模块文档](RAG/README.md) — 文档构建、向量索引、评测
+- [云端部署手册](DEPLOY.md) — 阿里云单机 Docker 部署
