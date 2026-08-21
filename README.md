@@ -35,7 +35,7 @@ START → intent_parser_node
 - `vector_retrieval_node`：RAG 混合检索取背景故事。
 - `generate_answer_node`：LLM 综合"图谱事实 + 向量故事"生成回答；推荐类问题引导介绍馆藏经典；明确禁止以"去服务台咨询"敷衍收尾。
 
-回答质量经过多轮打磨：防幻觉（严格基于资料）、防甩锅（位置信息直接给出）、防冷门（推荐锚定镇馆藏品）、防重影（前端渲染修复）。
+回答质量经过多轮打磨：防幻觉（严格基于资料）、防甩锅（位置信息直接给出）、防冷门（推荐锚定镇馆藏品）。
 
 ## 目录结构
 
@@ -81,8 +81,8 @@ cd RAG && museum-rag normalize && museum-rag chunk && museum-rag index   # 构�
 ### 启动
 
 ```bash
-uvicorn main:app --reload             # 后端 http://127.0.0.1:8000/docs
-streamlit run frontend/app.py         # 前端 http://127.0.0.1:8501
+uvicorn main:app --reload  
+streamlit run frontend/app.py
 ```
 
 ## API
