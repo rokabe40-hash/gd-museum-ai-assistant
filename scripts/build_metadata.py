@@ -156,7 +156,7 @@ async def call_llm(
 # ============================================================
 
 async def main():
-    src_path = Path(__file__).parent / "有详细介绍的藏品.json"
+    src_path = Path(__file__).resolve().parents[1] / "有详细介绍的藏品.json"
     with open(src_path, "r", encoding="utf-8") as f:
         artifacts = json.load(f)
 
@@ -209,13 +209,13 @@ async def main():
 
     print(f"\n处理完成: 成功 {len(unique_results)} 条, 死信 {len(dead_letter)} 条")
 
-    out_path = Path(__file__).parent / "metadata_mapping.json"
+    out_path = Path(__file__).resolve().parents[1] / "metadata_mapping.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(unique_results, f, ensure_ascii=False, indent=2)
     print(f"已保存到 {out_path}")
 
     if dead_letter:
-        dl_path = Path(__file__).parent / "metadata_dead_letter.json"
+        dl_path = Path(__file__).resolve().parents[1] / "metadata_dead_letter.json"
         with open(dl_path, "w", encoding="utf-8") as f:
             json.dump(dead_letter, f, ensure_ascii=False, indent=2)
         print(f"死信已保存到 {dl_path}")

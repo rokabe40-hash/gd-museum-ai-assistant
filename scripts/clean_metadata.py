@@ -298,7 +298,7 @@ def print_distribution(records: list[MetadataRecord], dim: str):
 # ============================================================
 
 def main():
-    src = Path(__file__).parent / "metadata_mapping.json"
+    src = Path(__file__).resolve().parents[1] / "metadata_mapping.json"
     with open(src, "r", encoding="utf-8") as f:
         raw = json.load(f)
 
