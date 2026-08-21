@@ -13,9 +13,11 @@ def init_chat_state() -> None:
         st.session_state.pending_question = None
 
 
-def append_message(role: str, content: str) -> None:
-    """追加一条消息到历史记录。"""
-    st.session_state.messages.append({"role": role, "content": content})
+def append_message(role: str, content: str, citations: list[dict[str, str]] | None = None) -> None:
+    """追加一条消息到历史记录；assistant 消息可携带引用溯源。"""
+    st.session_state.messages.append(
+        {"role": role, "content": content, "citations": citations or []}
+    )
 
 
 def clear_messages() -> None:
