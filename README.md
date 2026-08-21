@@ -4,12 +4,9 @@
 
 ## 在线体验 Demo
 
-| 入口 | 地址 | 说明 |
-|---|---|---|
-| 游客端（Streamlit 前端） | http://REDACTED:8501 | 对话式界面，推荐问题、流式打字效果 |
-| API 调试（Swagger） | http://REDACTED:8000/docs | 交互式调试 `POST /chat` |
+本项目已部署至阿里云，提供在线可体验的完整系统：游客端对话界面（Streamlit）+ API 交互调试（Swagger）。
 
-> Demo 部署于阿里云轻量服务器（Docker Compose：app + Neo4j + Qdrant + Streamlit）。健康探活：`GET http://REDACTED:8000/health` → `{"status":"ok"}`。
+> **Demo 链接随提交邮件一并提供，不在公开仓库展示。** 线上问答会调用付费大模型服务，公开放出链接易被扫描/滥用消耗 token。如需体验，请使用提交邮件中的链接，或按下方「快速开始」本地运行。
 
 ## 核心功能
 

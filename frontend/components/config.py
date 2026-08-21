@@ -5,8 +5,8 @@ import os
 # =========================
 # 线上 FastAPI 接口
 # =========================
-# 容器内通过 compose 注入 API_BASE_URL=http://app:8000 走内网；本地/直跑时回落到公网地址
-API_BASE_URL = os.environ.get("API_BASE_URL", "http://REDACTED:8000")
+# 容器内通过 compose 注入 API_BASE_URL=http://app:8000 走内网；本地/直跑时回落到本机后端
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
 API_CHAT_URL = f"{API_BASE_URL}/chat"
 API_HEALTH_URL = f"{API_BASE_URL}/health"
 
