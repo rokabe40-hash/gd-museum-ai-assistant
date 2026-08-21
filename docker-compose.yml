@@ -75,6 +75,23 @@ services:
     networks:
       - museum-net
 
+  frontend:
+    build: ./frontend
+    image: museum-frontend:latest
+    container_name: museum-frontend
+    restart: unless-stopped
+    environment:
+      # 走 compose 内网直连 app 服务，规避阿里云 NAT 回环（公网 IP 无法自访问）
+      API_BASE_URL: http://app:8000
+      # 与后端 API_ACCESS_KEYS 对应；必须由 .env 提供，源码/仓库不写死线上 key
+      API_KEY: ${API_KEY:?请在 .env 中设置 API_KEY}
+    depends_on:
+      - app
+    ports:
+      - "8501:8501"
+    networks:
+      - museum-net
+
 networks:
   museum-net:
     driver: bridge
