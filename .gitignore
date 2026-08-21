@@ -27,6 +27,11 @@ RAG/dist/
 *.whl
 # 部署包，用 DEPLOY.md 的 tar 命令重新生成
 /museum_deploy.tar.gz
+# 提交用源码包（git archive 生成，供邮件发送，不进库）
+/gd-museum-ai-assistant-source-*.zip
+
+# ── 演示视频脚本（含线上演示 IP，仅供组内，勿外传）──
+/docs/演示视频脚本与时间轴.md
 Neo4j/具身智能实验室.dump
 Neo4j/_test_out.txt
 Neo4j/广东省博物馆数据/藏品总目.json
