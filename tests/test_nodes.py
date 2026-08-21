@@ -110,6 +110,46 @@ def test_graph_miss_returns_not_sufficient(fake_graph) -> None:
     assert out["is_graph_sufficient"] is False
 
 
+def test_graph_artifact_intro_false_positive_rejected(fake_graph) -> None:
+    """兜底命中仅靠简介蹭中（名字不含关键字）时必须丢弃，避免把无关展品当图谱事实。"""
+    fake_graph(FakeGraph(artifacts={
+        "端石琴石砚": {"name": "端石琴石砚", "era": "清同治至光绪", "texture": "石",
+                    "introduction": "本品为端砚，石质细腻"},
+    }))
+    state = {"messages": [HumanMessage(content="端砚是什么年代的")], "current_entity": "端砚", "entity_type": "artifact", "reasoning_log": []}
+    out = asyncio.run(agent.graph_retrieval_node(state))
+    assert out["is_graph_sufficient"] is False
+
+
+def test_graph_artifact_fallback_name_contains_keyword(fake_graph) -> None:
+    """兜底命中名字含关键字时仍采纳（如"青花瓷"→"青花瓷瓶"）。"""
+    fake_graph(FakeGraph(artifacts={
+        "青花瓷瓶": {"name": "青花瓷瓶", "era": "清代", "texture": "瓷",
+                   "introduction": "景德镇烧造"},
+    }))
+    state = {"messages": [HumanMessage(content="青花瓷")], "current_entity": "青花瓷", "entity_type": "artifact", "reasoning_log": []}
+    out = asyncio.run(agent.graph_retrieval_node(state))
+    assert out["is_graph_sufficient"] is True
+    assert out["graph_result"]["name"] == "青花瓷瓶"
+
+
+def test_graph_artifact_fallback_exhibition_title_matches(fake_graph) -> None:
+    """藏品行不进时兜底到标题含关键字的展览（端砚→端砚艺术展览）。"""
+    fake_graph(FakeGraph(exhibition={"title": "【常设展览】紫石凝英——端砚艺术展览", "state": "permanent", "hall": "四楼"}))
+    state = {"messages": [HumanMessage(content="端砚是什么年代的")], "current_entity": "端砚", "entity_type": "artifact", "reasoning_log": []}
+    out = asyncio.run(agent.graph_retrieval_node(state))
+    assert out["is_graph_sufficient"] is True
+    assert out["graph_result"]["name"] == "【常设展览】紫石凝英——端砚艺术展览"
+
+
+def test_graph_artifact_unknown_rejects_unrelated_exhibition(fake_graph) -> None:
+    """未知藏品不落无关键字的展览（量子计算机→不得引书画特展）。"""
+    fake_graph(FakeGraph(exhibition={"title": "绘冠南天——粤藏宋元书画特展", "state": "review", "hall": "三楼"}))
+    state = {"messages": [HumanMessage(content="量子计算机在博物馆吗")], "current_entity": "量子计算机", "entity_type": "artifact", "reasoning_log": []}
+    out = asyncio.run(agent.graph_retrieval_node(state))
+    assert out["is_graph_sufficient"] is False
+
+
 # ── 向量检索 ──────────────────────────────────────────
 
 def test_vector_retrieval_hits(fake_retriever) -> None:
@@ -163,6 +203,14 @@ def test_facility_node_citation(stub_llm) -> None:
     out = agent.facility_node(state)
     assert out["facility_result"] == "洗手间在二楼"
     assert any(c["source_type"] == "facility" for c in out["citations"])
+
+
+def test_facility_synonym_search_covers_toilets() -> None:
+    """洗手间同义词扩展检索必须覆盖男/女卫生间（馆务数据用的是"卫生间"）。"""
+    docs = agent._facility_search(["洗手间", "卫生间", "男卫生间"])
+    headers = [d.metadata.get("Header 2", d.metadata.get("Header 3", "")) for d in docs]
+    assert "男卫生间" in headers
+    assert "女卫生间" in headers
 
 
 def test_chitchat_node(stub_llm) -> None:

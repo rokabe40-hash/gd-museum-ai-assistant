@@ -22,8 +22,10 @@ from collections import deque
 from typing import Annotated, Any, AsyncIterator, Literal, TypedDict
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.security import APIKeyHeader
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
@@ -122,6 +124,15 @@ async def check_rate_limit(request: Request) -> None:
             detail="请求过于频繁，请稍后再试。",
             headers={"Retry-After": str(int(RATE_LIMIT_WINDOW_SECONDS))},
         )
+
+
+# Swagger 的 Authorize 按钮：把 X-API-Key 声明为 OpenAPI 安全方案，
+# /docs 页面即可填 key 在线试调 /chat（实际校验仍在 check_access_key 里）
+api_key_header = APIKeyHeader(
+    name="X-API-Key",
+    auto_error=False,
+    description="后端分配的访问密钥（服务器 .env 的 API_ACCESS_KEYS）",
+)
 
 
 async def check_access_key(request: Request) -> None:
@@ -406,6 +417,22 @@ def chitchat_node(state: AgentState) -> dict:
     }
 
 
+_FACILITY_SYNONYMS = {
+    # 用户习惯说"洗手间"，馆务数据用的是"男卫生间/女卫生间/无障碍卫生间"
+    "洗手间": ["卫生间", "男卫生间"],
+}
+
+
+def _facility_search(terms: list[str], top_n: int = 5) -> list[Document]:
+    """按多个同义词分别 BM25 检索后合并去重（合并查询字符串对中文无效）。"""
+    seen: dict[str, Document] = {}
+    for term in terms:
+        for doc in bm25_retriever.invoke(term):  # type: ignore[union-attr]
+            key = doc.metadata.get("_body", doc.page_content)
+            seen.setdefault(key, doc)
+    return list(seen.values())[:top_n]
+
+
 def facility_node(state: AgentState) -> dict:
     """馆务服务节点：基于 BM25 检索 FAQ，严格防幻觉生成回答。"""
     user_query = state["messages"][-1].content
@@ -414,9 +441,13 @@ def facility_node(state: AgentState) -> dict:
     # 白盒测试日志：展示标准化关键词
     print(f"\n[路由拦截] facility_node | 原始查询='{user_query}' | 标准化关键词='{normalized_keyword}'")
 
-    # 使用 BM25 检索器获取相关文档
+    # 使用 BM25 检索器获取相关文档；洗手间类按同义词扩展检索（数据用"卫生间"）
     search_query = normalized_keyword if normalized_keyword else user_query
-    retrieved_docs = bm25_retriever.invoke(search_query) # type: ignore
+    search_terms = [search_query]
+    for base, alts in _FACILITY_SYNONYMS.items():
+        if base in search_query:
+            search_terms.extend(alts)
+    retrieved_docs = _facility_search(search_terms)
 
     # 白盒测试日志：BM25 召回结果
     print(f"[路由拦截] BM25 召回文档数: {len(retrieved_docs)}")
@@ -451,13 +482,15 @@ def facility_node(state: AgentState) -> dict:
 
     gen_prompt = [
         SystemMessage(content=(
-            "你是广东省博物馆的馆务服务 AI 助手。请根据以下参考资料回答游客的问题。\n\n"
-            "【极度重要】你的回答必须严格且唯一地基于提供的参考资料。"
-            "如果参考资料为空，或者参考资料中完全没有包含能回答游客问题的信息"
-            "（例如游客问'有没有游泳池'，但资料里没写），"
-            "你绝对不能凭空捏造、推测或使用外部常识。"
-            "你必须明确回复：'抱歉，根据目前的馆务信息，暂未找到关于[游客问题]的说明。"
-            "建议您直接前往服务台咨询工作人员。'\n\n"
+            "你是广东省博物馆的馆务服务 AI 助手。请根据以下参考资料回答游客的问题，"
+            "语气自然亲切，像馆内真人工作人员一样说话。\n\n"
+            "【极度重要】你的回答必须严格且唯一地基于提供的参考资料，不能凭空捏造、推测或使用外部常识。"
+            "用口语化的句子把信息讲清楚，把多个位置自然串成一段话，直接对游客称'您'，"
+            "不要输出项目符号列表、编号或'根据馆务信息'这类生硬书面语。"
+            "直接输出最终回答，不要输出任何思考过程或推理草稿。"
+            "若参考资料中已给出具体位置信息，请直接告诉游客位置，不要推给服务台；"
+            "若参考资料为空或完全没有能回答游客问题的信息，则明确回复："
+            "'抱歉，根据目前的馆务信息，暂未找到关于[游客问题]的说明，建议您直接前往服务台咨询工作人员。'\n\n"
             f"【参考资料 - 标准化关键词: {normalized_keyword or '无'}】\n{context_for_llm}"
         )),
         HumanMessage(content=_fence_user_input(user_query)),
@@ -533,6 +566,9 @@ async def graph_retrieval_node(state: AgentState) -> dict:
         if not ex_hits:
             return None
         title = ex_hits[0]["title"]
+        # 展览兜底同样必须标题含关键字，否则只是简介蹭中（如"量子计算机"→无关特展）
+        if name not in title:
+            return None
         ex_hall = await graph.get_hall_for_exhibition(title)
         return {
             "name": title,
@@ -548,7 +584,11 @@ async def graph_retrieval_node(state: AgentState) -> dict:
         if ctx is None:
             hits = await graph.fulltext_search_artifact(name, limit=1)
             if hits:
-                ctx = await graph.get_artifact_context(hits[0]["name"])
+                hit_name = hits[0]["name"]
+                # 兜底命中必须名字含关键字，否则只是简介蹭中（如"端砚"→"端石琴石砚"），
+                # 会把无关展品当图谱事实引用，直接丢弃交给向量+LLM 兜底。
+                if name in hit_name:
+                    ctx = await graph.get_artifact_context(hit_name)
         if ctx is None:
             return None
         return {
@@ -677,6 +717,27 @@ async def vector_retrieval_node(state: AgentState) -> dict:
     }
 
 
+# 推荐类问题用到的"馆藏经典"清单：内容均取自馆藏真实资料，避免 AI 把冷门展品当"必看"
+_CLASSIC_ITEMS_PROMPT = (
+    "当游客问『推荐/必看/第一次来/有哪些值得看/怎么逛』等推荐类问题时，"
+    "优先从下面的馆藏经典中挑选 2-3 件介绍，介绍内容必须基于参考资料中的真实信息，不要编造细节：\n"
+    "- 元青花折枝花玉壶春瓶：元代景德镇窑青花瓷代表，进口苏麻离青钴料，蓝白相间\n"
+    "- 端砚：产自肇庆（古称端州），唐代起即为贡品；馆藏有宋端石太史砚、端石琴石砚等\n"
+    "- 潮州木雕：国家级非遗，馆藏【常设展览】漆木精华——潮州木雕艺术展览\n"
+    "- 石湾陶：佛山石湾窑，俗称『石湾公仔』\n"
+    "- 广宁玉雕『白切鸡』：现代广绿玉雕，非遗传承人董健章作品\n"
+)
+
+_RECOMMEND_KEYWORDS = (
+    "推荐", "必看", "值得", "第一次", "必逛", "经典", "镇馆", "看点", "打卡", "怎么逛", "好玩的",
+)
+
+
+def _is_recommend_query(query: str) -> bool:
+    """判断游客提问是否属于『推荐/必看』类，是则在回答时引导介绍馆藏经典。"""
+    return any(kw in query for kw in _RECOMMEND_KEYWORDS)
+
+
 def generate_answer_node(state: AgentState) -> dict:
     """组装最终答案并格式化输出。仅处理 museum_query 上下文。"""
     user_query = state["messages"][-1].content
@@ -703,8 +764,11 @@ def generate_answer_node(state: AgentState) -> dict:
     gen_prompt = [
         SystemMessage(content=(
             "你是广东省博物馆的讲解 AI。请根据以下参考资料，用通俗易懂、生动有趣的语言"
-            "回答游客的问题。如果资料中没有相关信息，请如实告知并建议游客前往服务台咨询。\n\n"
+            "回答游客的问题。若参考资料足以回答，请直接充分作答，不要以『建议前往服务台咨询』结尾；"
+            "仅当参考资料中确实完全没有相关内容时，才如实说明资料暂缺，并可简短建议游客咨询服务台。"
+            "参考资料中的展品，游客没指明是哪件时，不要用『这件/眼前这件』指代，要说『馆藏中的某某』。\n\n"
             f"参考资料：\n{context}"
+            + (f"\n\n{_CLASSIC_ITEMS_PROMPT}" if _is_recommend_query(user_query) else "")
         )),
         HumanMessage(content=_fence_user_input(user_query)),
     ]
@@ -818,6 +882,13 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="广东省博物馆讲解 AI", version="0.3.0", lifespan=lifespan)
 
+
+# 根路径重定向到 /docs，避免裸 IP 访问看到一个报错页
+@app.get("/", include_in_schema=False)
+async def root() -> RedirectResponse:
+    return RedirectResponse(url="/docs")
+
+
 # CORS：云端前端跨域访问必需。来源用 CORS_ORIGINS 逗号分隔配置，默认放行所有
 _cors_origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",") if o.strip()]
 app.add_middleware(
@@ -835,8 +906,12 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/chat", response_model=ChatResponse, dependencies=[Depends(check_rate_limit), Depends(check_access_key)])
-async def chat(request: ChatRequest) -> ChatResponse:
+@app.post(
+    "/chat",
+    response_model=ChatResponse,
+    dependencies=[Depends(check_rate_limit), Depends(check_access_key)],
+)
+async def chat(request: ChatRequest, _: str | None = Security(api_key_header)) -> ChatResponse:
     """与博物馆讲解 AI 对话。"""
     initial_state: AgentState = {
         "messages": [HumanMessage(content=request.query)],

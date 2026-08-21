@@ -55,9 +55,13 @@ class FakeGraph:
         return self._artifacts.get(name)
 
     async def fulltext_search_artifact(self, keyword, limit=10):
-        if keyword in self._artifacts:
-            return [{"name": keyword, "era": self._artifacts[keyword]["era"]}]
-        return []
+        # 模拟真实全文索引：名字或简介含关键字即命中（含"简介蹭中"误命中）
+        hits = [
+            {"name": name, "era": data.get("era", "")}
+            for name, data in self._artifacts.items()
+            if keyword in name or keyword in (data.get("introduction") or "")
+        ]
+        return hits[:limit]
 
     async def get_hall(self, name):
         return self._hall
